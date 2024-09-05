@@ -70,13 +70,24 @@ uintptr_t ReflectiveLoader() {
         return -1;
     }
 
-    _vm_protect vm_protect = (_vm_protect)GetProcAddress("libsystem_kernel.dylib", "vm_protect");
-    _vm_allocate vm_allocate = (_vm_allocate)GetProcAddress("libsystem_kernel.dylib", "vm_allocate");
-    _dlsym dlsym = (_dlsym)GetProcAddress("libdyld.dylib", "dlsym");
-    _dlopen dlopen = (_dlopen)GetProcAddress("libdyld.dylib", "dlopen");
-    _calloc calloc = (_calloc)GetProcAddress( "libsystem_malloc.dylib", "calloc");
-    _realloc realloc = (_realloc)GetProcAddress("libsystem_malloc.dylib", "realloc");
-    _mach_task_self mach_task_self = (_mach_task_self)GetProcAddress("libsystem_kernel.dylib", "mach_task_self");
+    PIC_STRING(str_libsystem_kernel, "libsystem_kernel.dylib");
+    PIC_STRING(str_libdyld, "libdyld.dylib");
+    PIC_STRING(str_libsystem_malloc, "libsystem_malloc.dylib");
+    PIC_STRING(str_vm_protect, "vm_protect");
+    PIC_STRING(str_vm_allocate, "vm_allocate");
+    PIC_STRING(str_dlsym, "dlsym");
+    PIC_STRING(str_dlopen, "dlopen");
+    PIC_STRING(str_calloc, "calloc");
+    PIC_STRING(str_realloc, "realloc");
+    PIC_STRING(str_mach_task_self, "mach_task_self");
+
+    _vm_protect vm_protect = (_vm_protect)GetProcAddress(str_libsystem_kernel, str_vm_protect);
+    _vm_allocate vm_allocate = (_vm_allocate)GetProcAddress(str_libsystem_kernel, str_vm_allocate);
+    _dlsym dlsym = (_dlsym)GetProcAddress(str_libdyld, str_dlsym);
+    _dlopen dlopen = (_dlopen)GetProcAddress(str_libdyld, str_dlopen);
+    _calloc calloc = (_calloc)GetProcAddress( str_libsystem_malloc, str_calloc);
+    _realloc realloc = (_realloc)GetProcAddress(str_libsystem_malloc, str_realloc);
+    _mach_task_self mach_task_self = (_mach_task_self)GetProcAddress(str_libsystem_kernel, str_mach_task_self);
     if (vm_allocate == NULL ||
         vm_protect == NULL ||
         mach_task_self == NULL ||
@@ -290,8 +301,9 @@ uintptr_t ReflectiveLoader() {
     }
 
     void* exportAddr = NULL;
+    PIC_STRING(str_Entry, "_Entry");
     for (int i = 0; i < symbolCount; i++) {
-        if (symbols[i].name != NULL && strncmp(symbols[i].name, "_Entry", 7) == 0) {
+        if (symbols[i].name != NULL && strncmp(symbols[i].name, str_Entry, 7) == 0) {
             exportAddr = symbols[i].addr;
             break;
         }

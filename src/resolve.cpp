@@ -28,12 +28,13 @@
 // https://blogs.blackberry.com/en/2017/02/running-executables-on-macos-from-memory
 dyld_all_image_infos* FindDyld() {
     struct dyld_all_image_infos* dyld_all_image_infos = NULL;
+    PIC_STRING(str_dyld_all_image_infos, "dyld_all_image_infos");
 
     uintptr_t addr = DYLD_SHARED_CACHE_FIRST;
     while(addr < DYLD_SHARED_CACHE_LAST) {
         if (sys_chmod((const char*)addr, 0777) == ENOENT &&
             *(uint32_t*)addr == MH_MAGIC_64) {
-            dyld_all_image_infos = (struct dyld_all_image_infos*)GetProcAddress((void*)addr, "dyld_all_image_infos");
+            dyld_all_image_infos = (struct dyld_all_image_infos*)GetProcAddress((void*)addr, str_dyld_all_image_infos);
             if (dyld_all_image_infos != NULL) {
                 return dyld_all_image_infos;
             }
@@ -74,6 +75,9 @@ void* GetProcAddress(const void* hDlBase, const char* lpFunctionName) {
     struct nlist_64* nl = nullptr;
     char* strtab = nullptr;
 
+    PIC_STRING(str_linkedit, "__LINKEDIT");
+    PIC_STRING(str_text, "__TEXT");
+
     lc = (struct load_command*)((uintptr_t)hDlBase + sizeof(struct mach_header_64));
     for (uint32_t i=0; i<((struct mach_header_64*)hDlBase)->ncmds; i++) {
         if (lc->cmd == LC_SYMTAB) {
@@ -82,10 +86,10 @@ void* GetProcAddress(const void* hDlBase, const char* lpFunctionName) {
         else if (lc->cmd == LC_SEGMENT_64) {
             sc = (struct segment_command_64*)lc;
             char* segname = ((struct segment_command_64*)lc)->segname;
-            if (strncmp(segname, "__LINKEDIT", 11) == 0) {
+            if (strncmp(segname, str_linkedit, 11) == 0) {
                 linkedit = sc;
             }
-            else if (strncmp(segname, "__TEXT", 7) == 0) {
+            else if (strncmp(segname, str_text, 7) == 0) {
                 text = sc;
             }
         }

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+// https://gist.github.com/EvanMcBroom/d7f6a8fe3b4d8f511b132518b9cf80d7
 #define PIC_STRING(NAME, STRING) constexpr char NAME[]{ STRING }
 
 #ifdef _DEBUG
