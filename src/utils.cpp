@@ -1,7 +1,7 @@
 #include <string.h>
 
 #pragma clang optimize off
-void* memcpy(void* dst0, const void* src0, size_t length) {
+void* fnmemcpy(void* dst0, const void* src0, size_t length) {
     size_t i;
     char* d = (char*)dst0;
     char* s = (char*)src0;
@@ -12,7 +12,7 @@ void* memcpy(void* dst0, const void* src0, size_t length) {
 }
 #pragma clang optimize on
 
-char* strrchr(char *cp, char ch) {
+char* fnstrrchr(char *cp, char ch) {
     char *save;
     char c;
 
@@ -24,7 +24,7 @@ char* strrchr(char *cp, char ch) {
     return save;
 }
 
-int strncmp(const char *s1, const char *s2, size_t n) {
+int fnstrncmp(const char *s1, const char *s2, size_t n) {
     if (n == 0)
         return (0);
     do {

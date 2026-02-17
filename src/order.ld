@@ -4,8 +4,8 @@ __Z14GetProcAddressPKcS0_
 __Z14GetProcAddressPKvPKc
 __Z13FindImageBasev
 __Z8FindDyldv
-_memcpy
-_strncmp
-__Z7strrchrPcc
+__Z8fnmemcpyPvPKvm
+__Z9fnstrncmpPKcS0_m
+__Z9fnstrrchrPcc
 __Z9sys_chmodPKct
 __Z7TrimLdrv

